@@ -1,0 +1,56 @@
+name: CI - Build
+
+on:
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Enable Corepack (Yarn)
+        run: corepack enable
+
+      - name: Install dependencies (prefer Yarn if lockfile exists)
+        run: |
+          if [ -f yarn.lock ]; then
+            echo "Detected yarn.lock - installing with Yarn"
+            yarn --version || corepack prepare yarn@stable --activate
+            yarn install --frozen-lockfile
+          else
+            echo "No yarn.lock - installing with npm ci"
+            npm ci
+          fi
+
+      - name: Typecheck
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn typecheck
+          else
+            npm run typecheck --if-present || npx -y typescript tsc --noEmit
+          fi
+
+      - name: Build
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn build
+          else
+            npm run build
+          fi
+
+      - name: Tests
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn test:ci
+          else
+            npm run test --if-present || node --test --test-reporter=spec
+          fi

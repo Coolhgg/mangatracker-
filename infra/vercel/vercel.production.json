@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "name": "kenmei",
+  "regions": ["sin1"],
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm ci",
+  "devCommand": "npm run dev",
+  "outputDirectory": ".next",
+  "public": true,
+  "env": {
+    "NODE_ENV": "production",
+    "NEXT_PUBLIC_SITE_URL": "@site_url",
+    "DATABASE_URL": "@database_url",
+    "TYPESENSE_URL": "@typesense_url",
+    "TYPESENSE_API_KEY": "@typesense_api_key",
+    "BETTER_AUTH_SECRET": "@better_auth_secret",
+    "STRIPE_SECRET_KEY": "@stripe_secret_key",
+    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret",
+    "AUTUMN_SECRET_KEY": "@autumn_secret_key",
+    "SENTRY_DSN": "@sentry_dsn",
+    "NEXT_PUBLIC_POSTHOG_KEY": "@posthog_key",
+    "NEXT_PUBLIC_POSTHOG_HOST": "https://app.posthog.com"
+  },
+  "build": {
+    "env": {
+      "DATABASE_URL": "@database_url"
+    }
+  },
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "api/sync/**/*.ts": {
+      "maxDuration": 60,
+      "memory": 2048
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/worker/:path*",
+      "destination": "https://kenmei-worker.fly.dev/api/worker/:path*"
+    }
+  ]
+}

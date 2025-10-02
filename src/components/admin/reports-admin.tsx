@@ -167,4 +167,4 @@ export const ReportsAdmin = () => {
   );
 };
 
-export default ReportsAdmin;
+export { ReportsAdmin as default };

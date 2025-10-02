@@ -9,42 +9,41 @@ import {
   comments,
   adminReports,
 } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 export const runtime = "nodejs";
 
 // POST /api/dev/seed
-// Idempotent development seeding for Drizzle (SQLite/Turso/Postgres)
+// Idempotent development seeding for Drizzle (PostgreSQL)
 export async function POST(_req: NextRequest) {
   try {
-    // Dev-only guard (override with ALLOW_DEV_SEED=true if absolutely necessary)
+    // Dev-only guard
     if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_SEED !== "true") {
       return NextResponse.json({ ok: false, error: "Forbidden in production" }, { status: 403 });
     }
 
-    const now = new Date().toISOString();
+    const now = new Date();
+    const nowISO = now.toISOString();
 
-    // 1) Demo user
+    // 1) Demo user - check if exists first
     const demoEmail = "demo@kenmei.local";
     const demoUserName = "Demo User";
 
-    await db
-      .insert(users)
-      .values({
-        email: demoEmail,
-        name: demoUserName,
-        avatarUrl: null,
-        roles: [],
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing({ target: users.email });
-
-    // Ensure name stays updated idempotently (works across drivers)
-    await db
-      .update(users)
-      .set({ name: demoUserName, updatedAt: now })
-      .where(eq(users.email, demoEmail));
+    const existing = await db.select().from(users).where(eq(users.email, demoEmail)).limit(1);
+    
+    if (existing.length === 0) {
+      // Insert new user
+      await db.execute(sql`
+        INSERT INTO users (email, name, avatar_url, roles, created_at, updated_at)
+        VALUES (${demoEmail}, ${demoUserName}, NULL, ARRAY[]::text[], ${nowISO}::timestamp, ${nowISO}::timestamp)
+      `);
+    } else {
+      // Update existing
+      await db.execute(sql`
+        UPDATE users SET name = ${demoUserName}, updated_at = ${nowISO}::timestamp
+        WHERE email = ${demoEmail}
+      `);
+    }
 
     const [demoUser] = await db
       .select()
@@ -52,7 +51,7 @@ export async function POST(_req: NextRequest) {
       .where(eq(users.email, demoEmail))
       .limit(1);
 
-    // 2) Series (only requested two)
+    // 2) Series - use proper upsert
     const demoSeries = [
       {
         slug: "one-piece",
@@ -82,7 +81,6 @@ export async function POST(_req: NextRequest) {
     ];
 
     for (const s of demoSeries) {
-      // Insert if missing
       await db
         .insert(series)
         .values({
@@ -99,31 +97,28 @@ export async function POST(_req: NextRequest) {
           createdAt: now,
           updatedAt: now,
         })
-        .onConflictDoNothing({ target: series.slug });
-
-      // Update to keep data fresh (idempotent)
-      await db
-        .update(series)
-        .set({
-          title: s.title,
-          description: s.description,
-          coverImageUrl: s.coverImageUrl,
-          sourceName: s.sourceName,
-          sourceUrl: s.sourceUrl,
-          tags: s.tags as any,
-          rating: s.rating,
-          year: s.year,
-          status: s.status,
-          updatedAt: now,
-        })
-        .where(eq(series.slug, s.slug));
+        .onConflictDoUpdate({
+          target: series.slug,
+          set: {
+            title: s.title,
+            description: s.description,
+            coverImageUrl: s.coverImageUrl,
+            sourceName: s.sourceName,
+            sourceUrl: s.sourceUrl,
+            tags: s.tags as any,
+            rating: s.rating,
+            year: s.year,
+            status: s.status,
+            updatedAt: now,
+          },
+        });
     }
 
     const seriesRows = await db.select().from(series);
     const onePiece = seriesRows.find((r) => r.slug === "one-piece");
     const naruto = seriesRows.find((r) => r.slug === "naruto");
 
-    // 3) First chapter only for each requested series
+    // 3) Chapters - use proper upsert
     for (const sr of [onePiece, naruto].filter(Boolean) as typeof seriesRows) {
       const ch = {
         number: 1,
@@ -131,7 +126,6 @@ export async function POST(_req: NextRequest) {
         language: "en",
         publishedAt: now,
         pages: 32,
-        createdAt: now,
       };
 
       await db
@@ -145,14 +139,20 @@ export async function POST(_req: NextRequest) {
           pages: ch.pages,
           externalId: null,
           sourceId: null,
-          createdAt: ch.createdAt,
+          createdAt: now,
         })
-        .onConflictDoNothing({
+        .onConflictDoUpdate({
           target: [mangaChapters.seriesId, mangaChapters.number],
+          set: {
+            title: ch.title,
+            language: ch.language,
+            publishedAt: ch.publishedAt,
+            pages: ch.pages,
+          },
         });
     }
 
-    // 4) Library linking (demo user + one-piece)
+    // 4) Library linking - use proper upsert
     if (onePiece && demoUser) {
       await db
         .insert(library)
@@ -168,133 +168,15 @@ export async function POST(_req: NextRequest) {
           createdAt: now,
           updatedAt: now,
         })
-        .onConflictDoNothing({ target: [library.userId, library.seriesId] });
-    }
-
-    // 5) One pinned "General Discussion" thread and linked comments
-    let seededThreadId: number | undefined;
-    if (onePiece && demoUser) {
-      try {
-        const [existingThread] = await db
-          .select({ id: threads.id })
-          .from(threads)
-          .where(and(eq(threads.seriesId, onePiece.id), eq(threads.title, "General Discussion")))
-          .limit(1);
-
-        let threadId = existingThread?.id as number | undefined;
-        if (!existingThread) {
-          // Insert thread (avoid .returning() for better SQLite compatibility)
-          await db.insert(threads).values({
-            seriesId: onePiece.id,
-            title: "General Discussion",
-            pinned: true,
-            createdBy: demoUser.id,
-            createdAt: now,
+        .onConflictDoUpdate({
+          target: [library.userId, library.seriesId],
+          set: {
+            status: "reading",
+            rating: 9,
+            notes: "Great start!",
             updatedAt: now,
-          });
-          const [reloaded] = await db
-            .select({ id: threads.id })
-            .from(threads)
-            .where(and(eq(threads.seriesId, onePiece.id), eq(threads.title, "General Discussion")))
-            .limit(1);
-          threadId = reloaded?.id;
-        }
-
-        if (threadId) {
-          seededThreadId = threadId;
-          // Seed a top-level comment
-          const existingComment = await db
-            .select({ id: comments.id })
-            .from(comments)
-            .where(and(eq(comments.seriesId, onePiece.id), eq(comments.threadId, threadId)))
-            .limit(1);
-          if (!existingComment?.length) {
-            await db.insert(comments).values({
-              userId: demoUser.id,
-              seriesId: onePiece.id,
-              threadId,
-              parentId: null,
-              content: "Excited to start this series!",
-              edited: false,
-              deleted: false,
-              flagsCount: 0,
-              createdAt: now,
-            });
-          }
-
-          // Determine parent (top-level) comment id for reply
-          const [parent] = await db
-            .select({ id: comments.id })
-            .from(comments)
-            .where(and(eq(comments.seriesId, onePiece.id), eq(comments.threadId, threadId), eq(comments.content, "Excited to start this series!")))
-            .limit(1);
-
-          // Seed a reply attached to the top-level comment
-          const existingReply = await db
-            .select({ id: comments.id })
-            .from(comments)
-            .where(and(eq(comments.seriesId, onePiece.id), eq(comments.content, "Same here! Can't wait.")))
-            .limit(1);
-          if (!existingReply?.length) {
-            await db.insert(comments).values({
-              userId: demoUser.id,
-              seriesId: onePiece.id,
-              threadId,
-              parentId: parent?.id ?? null,
-              content: "Same here! Can't wait.",
-              edited: false,
-              deleted: false,
-              flagsCount: 0,
-              createdAt: now,
-            });
-          }
-        }
-      } catch (e: any) {
-        // If running against Postgres without threads/comments table, ignore gracefully (dev-only seed)
-        const code = e?.code || e?.original?.code;
-        if (code !== "42P01") throw e;
-      }
-    }
-
-    // 6) Demo admin reports (idempotent)
-    if (demoUser && onePiece) {
-      // A series report
-      const existingSeriesReport = await db
-        .select({ id: adminReports.id })
-        .from(adminReports)
-        .where(and(eq(adminReports.userId, demoUser.id), eq(adminReports.seriesId, onePiece.id)))
-        .limit(1);
-      if (!existingSeriesReport?.length) {
-        await db.insert(adminReports).values({
-          status: "open",
-          reason: "Incorrect tag on series",
-          userId: demoUser.id,
-          seriesId: onePiece.id,
-          commentId: null,
-          threadId: null,
-          createdAt: now,
+          },
         });
-      }
-
-      // A thread report (if thread seeded)
-      if (seededThreadId) {
-        const existingThreadReport = await db
-          .select({ id: adminReports.id })
-          .from(adminReports)
-          .where(and(eq(adminReports.userId, demoUser.id), eq(adminReports.threadId, seededThreadId)))
-          .limit(1);
-        if (!existingThreadReport?.length) {
-          await db.insert(adminReports).values({
-            status: "reviewing",
-            reason: "Off-topic discussion",
-            userId: demoUser.id,
-            seriesId: null,
-            commentId: null,
-            threadId: seededThreadId,
-            createdAt: now,
-          });
-        }
-      }
     }
 
     const counts = {

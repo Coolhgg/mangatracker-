@@ -1,53 +1,115 @@
-// Simple in-memory IP rate limiter. Suitable for single-node/dev. Replace with Redis in prod.
-export type RateLimitOptions = {
-  windowMs: number; // time window in ms
-  max: number; // max requests per window
-};
+import { NextResponse } from "next/server";
 
+// In-memory rate limiting (edge-safe)
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
-export function rateLimit(key: string, opts: RateLimitOptions) {
-  const now = Date.now();
-  const bucket = buckets.get(key);
-  if (!bucket || now > bucket.resetAt) {
-    buckets.set(key, { count: 1, resetAt: now + opts.windowMs });
-    return { ok: true, remaining: opts.max - 1, resetAt: now + opts.windowMs };
-  }
-  if (bucket.count >= opts.max) {
-    return { ok: false, remaining: 0, resetAt: bucket.resetAt };
-  }
-  bucket.count += 1;
-  return { ok: true, remaining: opts.max - bucket.count, resetAt: bucket.resetAt };
+interface RateLimitOptions {
+  key: string;
+  limit: number;
+  windowMs: number;
 }
 
-export function rateLimitFromRequest(req: Request, opts: RateLimitOptions) {
-  const ip = (req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown").split(",")[0].trim();
-  return rateLimit(`ip:${ip}`, opts);
+interface RateLimitResult {
+  ok: boolean;
+  response: NextResponse;
 }
 
-// Overload used by API route helpers expecting NextRequest signature
-// Accepts NextRequest/Request and returns shape with optional Response to short-circuit
+interface RateLimitFromRequestOptions {
+  windowMs: number;
+  max: number;
+}
+
+interface RateLimitFromRequestResult {
+  ok: boolean;
+}
+
+/**
+ * Rate limit a request by key (e.g., IP + route) - Async version
+ * Returns { ok: true, response } if allowed, or { ok: false, response } with 429 if denied
+ */
 export async function rateLimitRequest(
-  req: Request,
-  opts: { key: string; limit?: number; windowMs?: number }
-): Promise<{ ok: true } | { ok: false; response: Response }> {
-  const { key, limit = 60, windowMs = 60_000 } = opts;
-  // Combine ip + key to make route-specific bucket per IP
-  const ip = (req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown").split(",")[0].trim();
-  const bucketKey = `ip:${ip}:${key}`;
-  const res = rateLimit(bucketKey, { max: limit, windowMs });
-  if (!res.ok) {
-    const retryAfter = Math.max(0, Math.ceil((res.resetAt - Date.now()) / 1000));
+  request: Request,
+  options: RateLimitOptions
+): Promise<RateLimitResult> {
+  const { key, limit, windowMs } = options;
+  
+  // Get IP address
+  const ip = (request as any).ip || 
+    (request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()) || 
+    "unknown";
+  
+  const bucketKey = `${ip}:${key}`;
+  const now = Date.now();
+  
+  const bucket = buckets.get(bucketKey);
+  
+  if (!bucket || now > bucket.resetAt) {
+    // Create new bucket
+    buckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
+    return { ok: true, response: NextResponse.next() };
+  }
+  
+  bucket.count += 1;
+  
+  if (bucket.count > limit) {
     return {
       ok: false,
-      response: new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
-        status: 429,
-        headers: {
-          "Content-Type": "application/json",
-          "Retry-After": String(retryAfter),
-        },
-      }),
+      response: new NextResponse(
+        JSON.stringify({ error: "Too many requests" }),
+        {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        }
+      ),
     };
   }
+  
+  return { ok: true, response: NextResponse.next() };
+}
+
+/**
+ * Rate limit a request by IP - Synchronous version
+ * Returns { ok: true } if allowed, or { ok: false } if denied
+ */
+export function rateLimitFromRequest(
+  request: Request,
+  options: RateLimitFromRequestOptions
+): RateLimitFromRequestResult {
+  const { windowMs, max } = options;
+  
+  // Get IP address
+  const ip = (request as any).ip || 
+    (request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()) || 
+    "unknown";
+  
+  const bucketKey = `${ip}:default`;
+  const now = Date.now();
+  
+  const bucket = buckets.get(bucketKey);
+  
+  if (!bucket || now > bucket.resetAt) {
+    // Create new bucket
+    buckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
+    return { ok: true };
+  }
+  
+  bucket.count += 1;
+  
+  if (bucket.count > max) {
+    return { ok: false };
+  }
+  
   return { ok: true };
+}
+
+// Cleanup old buckets periodically (every 5 minutes)
+if (typeof setInterval !== "undefined") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of buckets.entries()) {
+      if (now > bucket.resetAt + 60_000) {
+        buckets.delete(key);
+      }
+    }
+  }, 5 * 60 * 1000);
 }

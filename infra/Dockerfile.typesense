@@ -1,0 +1,12 @@
+# Typesense self-hosted search engine
+FROM typesense/typesense:27.1
+
+# Expose Typesense ports
+EXPOSE 8108
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8108/health || exit 1
+
+# Default command with persistent data
+CMD ["--data-dir", "/data", "--api-key", "${TYPESENSE_API_KEY}", "--enable-cors"]

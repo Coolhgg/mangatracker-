@@ -21,6 +21,37 @@ const EXCLUDED_API_PREFIXES = [
   "/api/worker/status", // read-only or internal
 ];
 
+// Security headers helper
+function setSecurityHeaders(response: NextResponse): NextResponse {
+  // Prevent XSS attacks
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  
+  // Prevent clickjacking
+  response.headers.set('X-Frame-Options', 'DENY');
+  
+  // Prevent MIME type sniffing
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  
+  // Referrer policy
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  // Permissions Policy
+  response.headers.set(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=(), interest-cohort=()'
+  );
+  
+  // Strict Transport Security (HSTS) in production
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains; preload'
+    );
+  }
+  
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -52,10 +83,14 @@ export async function middleware(request: NextRequest) {
       } else {
         ipBucket.count += 1;
         if (ipBucket.count > MAX_REQS_IP) {
-          return new NextResponse(JSON.stringify({ error: "Too many requests (IP)" }), {
-            status: 429,
-            headers: { "Content-Type": "application/json" },
-          });
+          const response = new NextResponse(
+            JSON.stringify({ error: "Too many requests (IP)" }), 
+            {
+              status: 429,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+          return setSecurityHeaders(response);
         }
       }
 
@@ -68,22 +103,28 @@ export async function middleware(request: NextRequest) {
         } else {
           uBucket.count += 1;
           if (uBucket.count > MAX_REQS_USER) {
-            return new NextResponse(JSON.stringify({ error: "Too many requests (user)" }), {
-              status: 429,
-              headers: { "Content-Type": "application/json" },
-            });
+            const response = new NextResponse(
+              JSON.stringify({ error: "Too many requests (user)" }), 
+              {
+                status: 429,
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+            return setSecurityHeaders(response);
           }
         }
       }
     }
 
     // Let API routes handle their own auth/logic
-    return NextResponse.next();
+    const response = NextResponse.next();
+    return setSecurityHeaders(response);
   }
 
   // Do not enforce app auth on API routes (let routes handle their own auth)
   if (pathname.startsWith("/api/")) {
-    return NextResponse.next();
+    const response = NextResponse.next();
+    return setSecurityHeaders(response);
   }
 
   // Auth gate for app pages (keep existing behavior)
@@ -103,7 +144,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  return setSecurityHeaders(response);
 }
 
 export const config = {

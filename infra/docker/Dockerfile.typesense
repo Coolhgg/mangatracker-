@@ -1,0 +1,14 @@
+# Typesense Search Engine Dockerfile
+# Self-hosted search for manga/manhwa discovery
+
+FROM typesense/typesense:26.0
+
+# Expose Typesense ports
+EXPOSE 8108
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD curl -f http://localhost:8108/health || exit 1
+
+# Start Typesense with data persistence
+CMD ["--data-dir", "/data", "--api-key", "${TYPESENSE_API_KEY}", "--enable-cors"]

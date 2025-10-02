@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    const now = new Date().toISOString();
+    // Use Date objects for PostgreSQL timestamps (defaults will be used via .defaultNow())
     const newSeries = await db.insert(series).values({
       slug: slug.trim(),
       title: title.trim(),
@@ -201,8 +201,7 @@ export async function POST(request: NextRequest) {
       rating: 0,
       year: year || null,
       status: status?.trim() || 'ongoing',
-      createdAt: now,
-      updatedAt: now
+      // createdAt and updatedAt will use defaultNow() from schema
     }).returning();
 
     const created = newSeries[0];

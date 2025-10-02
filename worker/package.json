@@ -1,0 +1,22 @@
+{
+  "name": "kenmei-worker",
+  "version": "1.0.0",
+  "description": "Background sync worker for Kenmei manga tracker",
+  "main": "sync-worker.ts",
+  "scripts": {
+    "start": "tsx sync-worker.ts",
+    "dev": "tsx watch sync-worker.ts",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop kenmei-worker",
+    "pm2:restart": "pm2 restart kenmei-worker",
+    "pm2:logs": "pm2 logs kenmei-worker"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5"
+  }
+}

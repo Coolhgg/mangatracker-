@@ -4,7 +4,7 @@ import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { SourcesAdmin } from "@/components/admin/sources-admin";
-import ReportsAdmin from "@/components/admin/reports-admin";
+import { ReportsAdmin } from "@/components/admin/reports-admin";
 
 export default function AdminPage() {
   const { data: session, isPending } = useSession();
@@ -24,12 +24,10 @@ export default function AdminPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border bg-card p-6">
           <h2 className="text-lg font-semibold mb-3">Sources</h2>
-          {/* Sources admin with optimistic trust updates and sync triggers */}
           <SourcesAdmin />
         </div>
         <div className="rounded-lg border bg-card p-6">
           <h2 className="text-lg font-semibold mb-3">Reports</h2>
-          {/* Reports admin with filters and resolve/reject actions */}
           <ReportsAdmin />
         </div>
       </div>

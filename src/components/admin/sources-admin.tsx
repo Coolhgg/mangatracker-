@@ -236,3 +236,5 @@ export const SourcesAdmin = () => {
     </div>
   );
 };
+
+export { SourcesAdmin as default };

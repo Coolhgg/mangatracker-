@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build",
+  "cacheDirectories": [],
+  "framework": "nextjs",
+  "installCommand": "npm install",
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}

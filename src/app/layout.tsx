@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "../styles/tokens.css";
 import { Toaster } from "@/components/ui/sonner";
+import { Suspense } from "react";
 
 import VisualEditsMessenger from "../visual-edits/VisualEditsMessenger";
 import ErrorReporter from "@/components/ErrorReporter";
@@ -9,6 +10,7 @@ import Script from "next/script";
 import RouteMessengerScript from "@/components/RouteMessengerScript";
 import CustomAutumnProvider from "@/lib/autumn-provider";
 import LayoutChrome from "@/components/LayoutChrome";
+import { PostHogProvider } from "@/components/providers/posthog-provider";
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -34,15 +36,17 @@ export default function RootLayout({
           data-custom-data='{"appName": "YourApp", "version": "1.0.0", "greeting": "hi"}'
         />
         <ErrorReporter />
-        {/* Only load the external route messenger when inside an iframe */}
         <RouteMessengerScript />
-        <LayoutChrome>
-          <CustomAutumnProvider>
-            {children}
-          </CustomAutumnProvider>
-        </LayoutChrome>
+        <Suspense>
+          <PostHogProvider>
+            <LayoutChrome>
+              <CustomAutumnProvider>
+                {children}
+              </CustomAutumnProvider>
+            </LayoutChrome>
+          </PostHogProvider>
+        </Suspense>
         <Toaster richColors position="top-center" />
-      
         <VisualEditsMessenger />
       </body>
     </html>

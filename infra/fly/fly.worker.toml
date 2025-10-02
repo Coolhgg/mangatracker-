@@ -1,0 +1,49 @@
+# Fly.io configuration for Kenmei Worker
+app = "kenmei-worker"
+primary_region = "sin"
+
+[build]
+  dockerfile = "../docker/Dockerfile.worker"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3001"
+
+[[services]]
+  internal_port = 3001
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+  [[services.tcp_checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "10s"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/worker/status"
+    protocol = "http"
+
+[mounts]
+  source = "worker_logs"
+  destination = "/app/logs"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

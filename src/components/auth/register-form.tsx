@@ -138,15 +138,18 @@ export const RegisterForm = () => {
               type="button"
               onClick={async () => {
                 if (loading) return;
-                const callbackURL = typeof window !== "undefined" ? `${window.location.origin}/dashboard` : "/dashboard";
-                const { error, data } = await authClient.signIn.social({ provider: "google", callbackURL });
+                // Let better-auth handle OAuth callback automatically at /api/auth/callback/google
+                // This will redirect to /dashboard after successful authentication
+                const { error, data } = await authClient.signIn.social({ 
+                  provider: "google",
+                  callbackURL: "/dashboard"
+                });
                 if (error?.code) {
-                  toast.error(`Google sign-in failed${error.code ? `: ${error.code}` : ""}`);
+                  console.error("Google sign-in error:", error);
+                  toast.error(`Google sign-in failed${error.message ? `: ${error.message}` : ""}`);
                   return;
                 }
-                if (data?.url) {
-                  window.location.href = data.url;
-                }
+                // OAuth redirect will happen automatically via data.url
               }}
               className="text-sm text-primary underline"
               disabled={loading}

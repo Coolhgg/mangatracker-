@@ -3,6 +3,8 @@ import { db } from '@/db';
 import { series, mangaChapters } from '@/db/schema';
 import { like, or, and, gte, eq, desc, asc, sql, inArray } from 'drizzle-orm';
 
+// Search API with validation and database fallback
+// Updated: 2025-09-29T19:54:30Z - Fixed per_page validation order
 // Optional Typesense client (only used when env is configured)
 let typesenseClient: any = null;
 try {
@@ -31,21 +33,31 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get("q") || "";
-    const sort = searchParams.get("sort") || "relevance";
-    const status = searchParams.get("status");
-    const rating = searchParams.get("rating");
-    // New optional filters (will work immediately for Typesense; DB fallback will now support when columns/relations exist)
-    const source = searchParams.get("source");
-    const language = searchParams.get("language");
-    const perPage = Math.min(100, Math.max(1, parseInt(searchParams.get("per_page") || "20")));
-
-    // Validate required query parameter
+    
+    // Validate required query parameter FIRST
     if (!q.trim()) {
       return NextResponse.json({
         error: "Query parameter 'q' is required",
         code: "MISSING_QUERY"
       }, { status: 400 });
     }
+    
+    const sort = searchParams.get("sort") || "relevance";
+    const status = searchParams.get("status");
+    const rating = searchParams.get("rating");
+    const source = searchParams.get("source");
+    const language = searchParams.get("language");
+    const perPageRaw = parseInt(searchParams.get("per_page") || "20");
+    
+    // Validate per_page is positive
+    if (perPageRaw < 1) {
+      return NextResponse.json({
+        error: "Invalid per_page value. Must be a positive integer.",
+        code: "INVALID_PER_PAGE"
+      }, { status: 400 });
+    }
+    
+    const perPage = Math.min(100, perPageRaw);
 
     // First try Typesense if configured
     if (typesenseClient) {

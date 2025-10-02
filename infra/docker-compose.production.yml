@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  typesense:
+    build:
+      context: .
+      dockerfile: Dockerfile.typesense
+    container_name: kenmei-typesense
+    ports:
+      - "${TYPESENSE_PORT:-8108}:8108"
+    volumes:
+      - typesense-data:/data
+    environment:
+      - TYPESENSE_API_KEY=${TYPESENSE_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8108/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build:
+      context: ../
+      dockerfile: infra/Dockerfile.worker
+    container_name: kenmei-worker
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - TYPESENSE_HOST=${TYPESENSE_HOST}
+      - TYPESENSE_API_KEY=${TYPESENSE_API_KEY}
+      - MANGADEX_API_URL=${MANGADEX_API_URL}
+      - NODE_ENV=production
+    restart: unless-stopped
+    depends_on:
+      - typesense
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/health"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+
+volumes:
+  typesense-data:
+    driver: local
